@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Snake Game - PyScript</title>
+
+  <!-- PyScript CSS -->
+  <link rel="stylesheet" href="https://pyscript.net/releases/2025.8.1/core.css">
+
+  <!-- PyScript JS -->
+  <script type="module" src="https://pyscript.net/releases/2025.8.1/core.js"></script>
+
+  <style>
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+  }
+  canvas {
+    border: 3px solid #0f0;
+    background: #000;
+    width: 80vmin;   /* responsive */
+    height: 80vmin;  /* maintain square */
+  }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="400" height="400"></canvas>
+
+  <py-script>
+import js, random, asyncio
+from pyodide.ffi import create_proxy
+
+canvas = js.document.getElementById("game")
+ctx = canvas.getContext("2d")
+
+cell_size = 20
+cols, rows = 20, 20
+
+snake = [(5, 5)]
+direction = (1, 0)
+food = (10, 10)
+running = True
+
+def draw():
+    ctx.fillStyle = "black"
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    # Draw snake
+    ctx.fillStyle = "lime"
+    for x, y in snake:
+        ctx.fillRect(x * cell_size, y * cell_size, cell_size-2, cell_size-2)
+
+    # Draw food
+    ctx.fillStyle = "red"
+    ctx.fillRect(food[0] * cell_size, food[1] * cell_size, cell_size-2, cell_size-2)
+
+    # If game over
+    if not running:
+        ctx.fillStyle = "white"
+        ctx.font = "24px Arial"
+        ctx.fillText("Game Over!", 120, 200)
+        ctx.font = "16px Arial"
+        ctx.fillText("Press SPACE to restart", 110, 230)
+
+def update():
+    global snake, food, running
+    if not running:
+        return
+
+    head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
+
+    if (head in snake
+        or head[0] < 0 or head[1] < 0
+        or head[0] >= cols or head[1] >= rows):
+        running = False
+        return
+
+    snake.insert(0, head)
+    if head == food:
+        food = (random.randint(0, cols-1), random.randint(0, rows-1))
+    else:
+        snake.pop()
+
+def key_handler(event):
+    global direction, snake, food, running
+    key = event.key
+
+    if key == "ArrowUp" and direction != (0,1):
+        direction = (0,-1)
+    elif key == "ArrowDown" and direction != (0,-1):
+        direction = (0,1)
+    elif key == "ArrowLeft" and direction != (1,0):
+        direction = (-1,0)
+    elif key == "ArrowRight" and direction != (-1,0):
+        direction = (1,0)
+    elif key == " " and not running:  # SPACE to restart
+        reset_game()
+
+def reset_game():
+    global snake, direction, food, running
+    snake = [(5, 5)]
+    direction = (1, 0)
+    food = (10, 10)
+    running = True
+
+# Attach key listener with proxy
+js.document.addEventListener("keydown", create_proxy(key_handler))
+
+async def game_loop():
+    while True:
+        update()
+        draw()
+        await asyncio.sleep(0.35)
+
+await game_loop()
+  </py-script>
+</body>
+</html>
