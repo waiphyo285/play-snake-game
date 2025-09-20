@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Snake Game - PyScript</title>
 
   <!-- PyScript CSS -->
@@ -24,10 +25,74 @@
     width: 80vmin;   /* responsive */
     height: 80vmin;  /* maintain square */
   }
+    /* Touch controls for small devices */
+    .touch-controls {
+        display: none; 
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: 12px;
+        z-index: 999;
+        width: 220px;
+        max-width: 90%;
+        pointer-events: auto;
+        user-select: none;
+    }
+    .touch-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        align-items: center;
+        justify-items: center;
+    }
+    .btn-circle {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.95);
+        color: #111;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        border: 1px solid rgba(0,0,0,0.12);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.28);
+        touch-action: none;
+        transition: transform 120ms ease, background 120ms ease;
+    }
+    .btn-circle:active,
+    .btn-circle.active {
+        transform: scale(0.94);
+        background: rgba(230,230,230,0.98);
+    }
+
+    /* Show controls on small screens or touch devices */
+    @media (max-width: 700px), (max-height: 700px), (pointer: coarse) {
+        .touch-controls { display: block; }
+        canvas { width: 86vmin; height: 86vmin; }
+        body { padding-bottom: 140px; box-sizing: border-box; }
+    }
   </style>
 </head>
 <body>
   <canvas id="game" width="400" height="400"></canvas>
+
+    <!-- On-screen touch controls for small devices -->
+    <div class="touch-controls" aria-hidden="false">
+        <div class="touch-grid">
+                <div></div>
+                <button id="btn-up" class="btn-circle" aria-label="Up">↑</button>
+                <div></div>
+
+                <button id="btn-left" class="btn-circle" aria-label="Left">←</button>
+                <button id="btn-play" class="btn-circle" aria-label="Play/Pause">⏯</button>
+                <button id="btn-right" class="btn-circle" aria-label="Right">→</button>
+
+                <div></div>
+                <button id="btn-down" class="btn-circle" aria-label="Down">↓</button>
+                <div></div>
+        </div>
+    </div>
 
   <py-script>
 import js, random, asyncio
@@ -43,6 +108,9 @@ snake = [(5, 5)]
 direction = (1, 0)
 food = (10, 10)
 running = True
+paused = False
+# Expose initial state to JS so the play button can change behavior
+js.document.body.dataset.gameState = 'running'
 
 def draw():
     ctx.fillStyle = "black"
@@ -64,10 +132,15 @@ def draw():
         ctx.fillText("Game Over!", 120, 200)
         ctx.font = "16px Arial"
         ctx.fillText("Press SPACE to restart", 110, 230)
+    # If paused
+    if paused and running:
+        ctx.fillStyle = "white"
+        ctx.font = "20px Arial"
+        ctx.fillText("Paused", 170, 200)
 
 def update():
     global snake, food, running
-    if not running:
+    if not running or paused:
         return
 
     head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
@@ -76,6 +149,8 @@ def update():
         or head[0] < 0 or head[1] < 0
         or head[0] >= cols or head[1] >= rows):
         running = False
+        # notify JS that the game is over
+        js.document.body.dataset.gameState = 'over'
         return
 
     snake.insert(0, head)
@@ -98,6 +173,12 @@ def key_handler(event):
         direction = (1,0)
     elif key == " " and not running:  # SPACE to restart
         reset_game()
+    elif key.lower() == 'p':
+        # Toggle pause only when game is running
+        global paused
+        if running:
+            paused = not paused
+            js.document.body.dataset.gameState = 'paused' if paused else 'running'
 
 def reset_game():
     global snake, direction, food, running
@@ -105,6 +186,10 @@ def reset_game():
     direction = (1, 0)
     food = (10, 10)
     running = True
+    # reset paused state and notify JS
+    global paused
+    paused = False
+    js.document.body.dataset.gameState = 'running'
 
 # Attach key listener with proxy
 js.document.addEventListener("keydown", create_proxy(key_handler))
@@ -117,5 +202,93 @@ async def game_loop():
 
 await game_loop()
   </py-script>
+
+    <script>
+    // Map button presses to synthetic keyboard events so the existing PyScript
+    // keydown listener handles direction changes. Works with touch and mouse.
+    (function(){
+        const mapping = {
+            'btn-up': 'ArrowUp',
+            'btn-down': 'ArrowDown',
+            'btn-left': 'ArrowLeft',
+            'btn-right': 'ArrowRight'
+        };
+
+        // play/restart button gets special behavior depending on game state
+        const playBtn = document.getElementById('btn-play');
+
+        function handlePlayPress(e){
+            e.preventDefault();
+            const state = document.body.dataset.gameState || 'running';
+            if(state === 'over'){
+                // send Space to restart
+                sendKey(' ');
+            } else {
+                // toggle pause
+                sendKey('p');
+            }
+            playBtn.classList.add('active');
+            setTimeout(()=> playBtn.classList.remove('active'), 120);
+        }
+
+        // Update icon/label based on dataset.gameState
+        function updatePlayIcon(state){
+            if(!playBtn) return;
+            if(state === 'over'){
+                playBtn.textContent = '⟲';
+                playBtn.setAttribute('aria-label','Restart');
+            } else if(state === 'paused'){
+                playBtn.textContent = '▶';
+                playBtn.setAttribute('aria-label','Play');
+            } else {
+                playBtn.textContent = '⏸';
+                playBtn.setAttribute('aria-label','Pause');
+            }
+        }
+
+        // Observe changes to dataset.gameState
+        const obs = new MutationObserver(()=>{
+            updatePlayIcon(document.body.dataset.gameState);
+        });
+        obs.observe(document.body, { attributes: true, attributeFilter: ['data-game-state'] });
+        // Initialize icon
+        updatePlayIcon(document.body.dataset.gameState || 'running');
+
+        function sendKey(key){
+            const ev = new KeyboardEvent('keydown', { key: key, bubbles: true });
+            // Dispatch on document so listeners added to document receive it
+            document.dispatchEvent(ev);
+        }
+
+    function bindButton(id){
+            const el = document.getElementById(id);
+            if(!el) return;
+            const key = mapping[id];
+
+            const start = (e) => {
+                e.preventDefault();
+                el.classList.add('active');
+                sendKey(key);
+            };
+            const end = (e) => {
+                e.preventDefault();
+                el.classList.remove('active');
+            };
+
+            el.addEventListener('touchstart', start, { passive: false });
+            el.addEventListener('touchend', end);
+            el.addEventListener('mousedown', start);
+            el.addEventListener('mouseup', end);
+            el.addEventListener('mouseleave', end);
+        }
+
+        Object.keys(mapping).forEach(bindButton);
+        // attach special handler for play button
+        if(playBtn){
+            playBtn.addEventListener('touchstart', handlePlayPress, { passive: false });
+            playBtn.addEventListener('mousedown', handlePlayPress);
+        }
+    })();
+    </script>
 </body>
 </html>
